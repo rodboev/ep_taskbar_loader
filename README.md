@@ -7,7 +7,7 @@
 
 ## Installation
 
-- Grab a copy of `ep_taskbar` for your Windows version from <https://github.com/ExplorerPatcher/ep_taskbar_releases/releases>, and place it in `C:\Program Files\ep_taskbar`, you should get both the `.dll` and `.pdb`. If you are unsure of what version to get, just get all available versions
+- Grab the `ep_taskbar` DLL for your Windows version from <https://github.com/ExplorerPatcher/ep_taskbar_releases/releases> and place it in `C:\Program Files\ep_taskbar`. Current releases use codename filenames: `ep_taskbar.rs2` (Win10), `ep_taskbar.ni` (Win11 22H2/23H2), `ep_taskbar.ge` (Win11 24H2+)
 - Download the mod from <https://github.com/Reabstraction/ep_taskbar_loader/releases>
 - Create a new mod in WindHawk, and copy over the contents of the `.wh.cpp` file into it
 - Compile and enable the mod, it should automatically restart explorer. If it gets stuck restarting or pops up a messagebox, disable the mod and send the logs

@@ -15,8 +15,7 @@
 /*
 - install_path: "C:\\Program Files\\ep_taskbar"
   $name: ep_taskbar install path
-  $description: "This folder should contain `ep_taskbar.X.dll`, corresponding
-to your Windows version, requires a restart"
+  $description: "Folder containing ep_taskbar DLLs (rs2/ni/ge) from ep_taskbar_releases, requires restart"
 - dll_name: ""
   $name: DLL Name
   $description: "ONLY FOR DEBUG: Pin a specific DLL, requires a restart"
@@ -293,67 +292,73 @@ inline const std::optional<std::wstring> PickTaskbarDll() {
     ZeroMemory(&info, sizeof(info));
     info.dwOSVersionInfoSize = sizeof(info);
 
-    HMODULE ntos = LoadLibraryW(L"ntdll.dll");
-    RtlGetVersion_t RtlGetVersion;
-    RtlGetVersion = (RtlGetVersion_t)GetProcAddress(ntos, "RtlGetVersion");
+    HMODULE ntos = GetModuleHandleW(L"ntdll.dll");
+    RtlGetVersion_t RtlGetVersion =
+        (RtlGetVersion_t)GetProcAddress(ntos, "RtlGetVersion");
 
     if (RtlGetVersion == NULL) {
         Wh_Log(L"RtlGetVersion was not found");
-        return std::wstring();
+        return std::nullopt;
     }
-    RtlGetVersion((OSVERSIONINFOW *)&info);
 
+    RtlGetVersion((OSVERSIONINFOW *)&info);
     DWORD b = info.dwBuildNumber;
 
-    PCWSTR res = Wh_GetStringSetting(L"pinned_version");
+    // Fix: settings block defines "dll_name", not "pinned_version"
+    PCWSTR res = Wh_GetStringSetting(L"dll_name");
     if (wcslen(res) > 0) {
         std::wstring pinned = res;
         Wh_FreeStringSetting(res);
+        Wh_Log(L"Using pinned DLL: %s", pinned.c_str());
         return pinned;
     }
     Wh_FreeStringSetting(res);
 
-    if (b == 15063                     // Windows 10 1703
-        || b == 16299                  // Windows 10 1709
-        || b == 17134                  // Windows 10 1803
-        || b == 17763                  // Windows 10 1809
-        || (b >= 18362 && b <= 18363)  // Windows 10 1903, 1909
-        || (b >= 19041 && b <= 19045)) // Windows 10 20H2, 21H2, 22H2
-    {
-        return L"ep_taskbar.0." ARCH_STR ".dll";
+    // Windows 10 1703-22H2: public rs2 DLL
+    if (b == 15063 ||                  // Windows 10 1703
+        b == 16299 ||                  // Windows 10 1709
+        b == 17134 ||                  // Windows 10 1803
+        b == 17763 ||                  // Windows 10 1809
+        (b >= 18362 && b <= 18363) ||  // Windows 10 1903, 1909
+        (b >= 19041 && b <= 19045)) {  // Windows 10 20H2, 21H2, 22H2
+        return L"ep_taskbar.rs2." ARCH_STR ".dll";
     }
 
-    if (b >= 21343 && b <= 22000) // Windows 11 21H2
-    {
-        return L"ep_taskbar.1." ARCH_STR ".dll";
+    // Windows 11 21H2: needs ep_taskbar.1, no public equivalent
+    if (b >= 21343 && b <= 22000) {
+        Wh_Log(L"Build %lu requires ep_taskbar.1 (request-only, no public equivalent). "
+               L"Pin a DLL manually via dll_name setting.", b);
+        return std::nullopt;
     }
 
-    if ((b >= 22621 && b <= 22635)     // 22H2-23H2 Release, Release Preview, and Beta channels
-        || (b >= 23403 && b <= 25197)) // Early pre-reboot Dev channel until
-                                       // post-reboot Dev channel
-    {
-        return L"ep_taskbar.2." ARCH_STR ".dll";
+    // Windows 11 22H2/23H2 Nickel-era: public ni DLL
+    // Note: 22621 < .1343 is not supported per wiki, but we cannot check UBR here
+    if ((b >= 22621 && b <= 22635) ||  // 22H2-23H2 Release, Release Preview, Beta
+        (b >= 23403 && b <= 23620)) {  // Dev channel through 23620
+        return L"ep_taskbar.ni." ARCH_STR ".dll";
     }
 
-    if (b >= 25201 && b <= 25915) // Pre-reboot Dev channel until early Canary
-                                  // channel, nuked ITrayComponentHost methods
-                                  // related to classic search box
-    {
-        return L"ep_taskbar.3." ARCH_STR ".dll";
+    // Dev 25115-25915: needs ep_taskbar.3, no public equivalent
+    if (b >= 25115 && b <= 25915) {
+        Wh_Log(L"Build %lu requires ep_taskbar.3 (request-only, no public equivalent). "
+               L"Pin a DLL manually via dll_name setting.", b);
+        return std::nullopt;
     }
 
-    if (b >= 25921 && b <= 26040) // Canary channel with nuked classic system tray
-    {
-        return L"ep_taskbar.4." ARCH_STR ".dll";
+    // Canary 25921-26040: needs ep_taskbar.4, no public equivalent
+    if (b >= 25921 && b <= 26040) {
+        Wh_Log(L"Build %lu requires ep_taskbar.4 (request-only, no public equivalent). "
+               L"Pin a DLL manually via dll_name setting.", b);
+        return std::nullopt;
     }
 
-    if (b >= 26052) // Same as 4 but with 2 new methods in ITrayComponentHost
-                    // between GetTrayUI and ProgrammableTaskbarReportClick
-    {
-        return L"ep_taskbar.5." ARCH_STR ".dll";
+    // Windows 11 24H2+ Germanium-era: public ge DLL
+    if (b >= 26052) {
+        return L"ep_taskbar.ge." ARCH_STR ".dll";
     }
 
-    return L""; // Empty = failure
+    Wh_Log(L"Unsupported build for ep_taskbar: %lu", b);
+    return std::nullopt;
 }
 
 BOOL FileExists(LPCTSTR szPath) {
@@ -373,11 +378,11 @@ BOOL Wh_ModInit() {
             return TRUE;
     }
 
-    PCWSTR installPath = Wh_GetStringSetting(L"install_path");
     std::optional<std::wstring> dllVer = PickTaskbarDll();
-    // We didn't detect a compatible version, exit
     if (!dllVer)
         return FALSE;
+
+    PCWSTR installPath = Wh_GetStringSetting(L"install_path");
     std::wstring finalInstallPath = installPath;
     Wh_FreeStringSetting(installPath);
     if (finalInstallPath.length() == 0) {
